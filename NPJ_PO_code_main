@@ -1,0 +1,68 @@
+######
+#Author: Ying Ni
+#Date: Dec, 2020
+######
+
+library(AnnotationDbi)
+library(org.Hs.eg.db)
+library(ggrepel) # ggplot2 addon for better labels
+library(dplyr) 
+library(readr)
+library(readxl)
+library(phenoTest)
+library(GSEABase)
+library(DESeq2)
+library(ggplot2)
+library(survival)
+library(survminer)
+library(stats)
+library(arm)
+library(gtsummary)
+library(tidyverse)
+library(ggplot2)
+library(RColorBrewer)
+library(pheatmap)
+library(ggrepel)
+library(singscore)
+
+### For samples
+Sample49<-read.csv("Sample49_R.csv", header=TRUE)
+Sample49<-Sample49[-1]
+rownames(Sample49)<-Sample49$ID
+
+### DE analysis based on responder (PR+CR= responder; progressed=non-responder)
+cd<-RawCounts2[,c(2:50)]
+cd_sub<-cd[apply(cd, MARGIN = 1, function(row) {all(row>2)}),] ### Filtered Read
+cd_sub_withGene<-RawCounts2[which(rownames(RawCounts2) %in% rownames(cd_sub)),]
+
+Sample_resp<-Sample49[which(! is.na(Sample49$Resp1resp0prog)),]
+cd_sub_resp<-cd_sub[,which(colnames(cd_sub) %in% Sample_resp$ID)]
+dds_resp<-DESeqDataSetFromMatrix(countData=cd_sub_resp,colData=Sample_resp,design = ~ Resp1resp0prog) ## 2-groups: Partial responder and complete response vs progressed
+dds_resp<-DESeq(dds_resp)
+res_resp_df <- as.data.frame(results(dds_resp))
+res_resp <- results(dds_resp)
+rownames(res_resp_df)<-rownames(cd_sub)
+res_resp_df$Symbol <- mapIds(org.Hs.eg.db,keys=rownames(res_resp_df),column="SYMBOL",keytype="ENSEMBL",multiVals="first")
+
+sig_resp<-subset(res_resp_df,padj < 0.05 )
+sig_resp_df<-merge(cd_sub,sig_resp, by=0)
+
+
+
+### volcano plot2 with enhanced vocalno package 
+cd_sub_withGene
+res_resp <- results(dds_resp)
+v_plot<-EnhancedVolcano(res_resp,
+                lab = cd_sub_withGene$Gene_Name,
+                x = 'log2FoldChange',
+                y = 'padj',
+                xlab=bquote(-Log[2]~ 'fold change'),
+                title = 'Responder versus NonResponder',
+                pCutoff = 5e-2,
+                FCcutoff = 0.5,
+                pointSize = 3.0,
+                labSize = 4.0,
+                legendPosition="bottom",
+                drawConnectors = TRUE,
+                widthConnectors = 0.75)
+v_plot+ggplot2::coord_cartesian(xlim=c(-4,4),ylim=c(0,3))
